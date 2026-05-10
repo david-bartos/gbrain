@@ -16,6 +16,7 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import { PGLiteEngine } from '../src/core/pglite-engine.ts';
 import { operations } from '../src/core/operations.ts';
 import { dispatchToolCall } from '../src/mcp/dispatch.ts';
+import { buildParamSchema, buildToolDefs } from '../src/mcp/tool-defs.ts';
 
 let engine: PGLiteEngine;
 
@@ -37,6 +38,31 @@ describe('facts MCP ops registration + scope', () => {
     expect(op!.mutating).toBe(true);
     expect(op!.params.turn_text?.required).toBe(true);
     expect(op!.params.session_id).toBeDefined();
+    expect(op!.params.entity_hints?.items).toEqual({ type: 'string' });
+  });
+
+  test('extract_facts MCP schema declares string array items', () => {
+    const tool = buildToolDefs(operations).find(t => t.name === 'extract_facts');
+    expect(tool).toBeDefined();
+    expect(tool!.inputSchema.properties.entity_hints).toEqual({
+      type: 'array',
+      description: 'Existing canonical entity slugs the agent has already resolved. Helps the extractor pick the right slug.',
+      items: { type: 'string' },
+    });
+  });
+
+  test('all array params declare item schemas for strict tool callers', () => {
+    const arrayParams = operations.flatMap(op =>
+      Object.entries(op.params)
+        .filter(([, param]) => param.type === 'array')
+        .map(([name, param]) => ({ op: op.name, name, param })),
+    );
+
+    expect(arrayParams.length).toBeGreaterThan(0);
+    for (const { op, name, param } of arrayParams) {
+      expect(param.items, `${op}.${name}`).toBeDefined();
+      expect(buildParamSchema(param), `${op}.${name}`).toHaveProperty('items');
+    }
   });
 
   test('recall is registered with read scope', () => {
